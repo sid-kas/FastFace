@@ -1,0 +1,29 @@
+{
+    "LFW": {
+        "description" : "face recognition",
+        "page":"http://vis-www.cs.umass.edu/lfw/#download",
+        "dataset_url": "http://vis-www.cs.umass.edu/lfw/lfw.tgz",
+        "relevant":false
+    },
+
+    "IMFDB": {
+        "description": "faces annotated with expressions, illumination, pose, Occlusion, age, Gender",
+        "page": "http://cvit.iiit.ac.in/projects/IMFDB/",
+        "dataset_url": "http://cvit.iiit.ac.in/projects/IMFDB/IMFDB_final.zip",
+        "relevant": true
+    },
+
+    "ChaLearn": {
+        "description": "faces annotated with real and apparaent age",
+        "page": "http://chalearnlap.cvc.uab.es/dataset/26/description/",
+        "dataset_url": "http://158.109.8.102/AppaRealAge/appa-real-release.zip",
+        "relevant": true
+    },
+    "IMDB-WIKI": {
+        "description": "face images annotated with age and gender",
+        "page": "https://data.vision.ee.ethz.ch/cvl/rrothe/imdb-wiki/",
+        "dataset_url": "https://data.vision.ee.ethz.ch/cvl/rrothe/imdb-wiki/static/wiki.tar.gz",
+        "relevant": true
+    }
+
+}

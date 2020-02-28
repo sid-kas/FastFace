@@ -1,0 +1,7 @@
+# ingonre all files
+*
+# except the ones below
+!.gitignore
+!__init__.py
+!datasets.json
+!download_datasets.py
