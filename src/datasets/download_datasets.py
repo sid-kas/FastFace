@@ -35,7 +35,6 @@ class DatasetDownloader:
             file_name = str(url).split('/')[-1]
             self.downloader.download_file_from_web_server(url,destination=self.target_path)
             self.downloader.extract_any_file(zip_file_path=os.path.join(self.target_path,file_name), destination=self.target_path)
-            break
 
 dd = DatasetDownloader(target_path="src/datasets/")
 

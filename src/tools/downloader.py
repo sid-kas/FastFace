@@ -3,6 +3,7 @@ import os
 import tarfile
 import zipfile
 from pyunpack import Archive
+from tqdm import tqdm
 
 import requests
 
@@ -19,7 +20,7 @@ class Downloader:
         local_filename = url.split('/')[-1]
         target_file = os.path.join(destination, local_filename)
         if not os.path.exists(target_file):
-            response = requests.get(url, stream=True,verbose=True)
+            response = requests.get(url, stream=True)
             self.save_response_content(response, target_file)
         print('Finished download')
         return local_filename
@@ -49,8 +50,11 @@ class Downloader:
     @staticmethod
     def save_response_content(response, destination):
         with open(destination, "wb") as f:
+            total_length = int(response.headers.get('content-length'))
+            progress_bar = tqdm(total=total_length/(1024*1024))
             for chunk in response.iter_content(CHUNK_SIZE):
                 if chunk:  # filter out keep-alive new chunks
+                    progress_bar.update(CHUNK_SIZE/(1024*1024))
                     f.write(chunk)
 
     @staticmethod
