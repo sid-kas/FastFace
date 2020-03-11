@@ -17,11 +17,11 @@ train_test_mask = np.random.rand(len(df)) < 0.8
 train_valid_df = df[train_test_mask]
 test_df = df[~train_test_mask]
 
-train_validation_mask = np.random.rand(len(train_valid_df)) < 0.7
+train_validation_mask = np.random.rand(len(train_valid_df)) < 0.9
 train_df = train_valid_df[train_validation_mask]
 valid_df = train_valid_df[~train_validation_mask]
 
-batch_size = 2; image_size = 128
+batch_size = 12; image_size = 128
 n_classes={'emotion':7,'age':101,'gender':2}
 print(n_classes)
 train_gen = ega.DataGenerator(train_df,batch_size=batch_size,image_size=image_size,augment=True, n_classes=n_classes )
@@ -36,6 +36,13 @@ train_gen = ega.DataGenerator(train_df,batch_size=batch_size,image_size=image_si
 
 validation_gen = ega.DataGenerator(valid_df,batch_size=batch_size,image_size=image_size,augment=False, n_classes=n_classes )
 
-model = ega.get_model(train_gen,non_trainable_blocks=['bolck9'])
+model = ega.get_model(train_gen,non_trainable_blocks=['block9']) # 'bolck1','bolck2','bolck3','bolck4','bolck5',
 
-ega.train_model(model,train_gen, validation_gen,epochs=10,steps=10000)
+fake_data = np.ones(shape=[12, image_size,image_size, 3]).astype(np.float32)
+model(fake_data) # initialize model to load weights
+model.load_weights("./checkpoints/run3/EGA_epoch_22_score_91.h5")
+
+print(model.summary())
+# print(train_gen.n_classes)
+# print(train_gen.n_classes_check)
+ega.train_model(model,train_gen, validation_gen,epochs=40,steps=5000,checkpoints_path="checkpoints/run4")

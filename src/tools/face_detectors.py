@@ -6,7 +6,10 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-from hof.downloader import Downloader
+parent_folder_path = os.path.dirname( os.path.abspath(__file__)).split(r'src')[0] # get parent folder
+sys.path.append(parent_folder_path)
+
+from src.tools.downloader import Downloader
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +57,10 @@ class FaceDetector:
         cv2.rectangle(img, (x, y), (x + label_size[0], y + label_size[1] + base_line), color, cv2.FILLED)
         cv2.putText(img, label, (x, y + label_size[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0))
 
+    
+    def crop_face(self, image, x, y, w, h):
+        crop_img = image[y:y+h, x:x+w]
+        return crop_img
 
 class BaseTensorflowFaceDetector(FaceDetector):
     __metaclass__ = ABCMeta
@@ -98,7 +105,8 @@ class BaseTensorflowFaceDetector(FaceDetector):
 
         boxes = np.squeeze(boxes)
         scores = np.squeeze(scores)
-        faces = []
+        faces_coords = []
+        faces_images = []
         im_height, im_width, _ = image.shape
 
         min_confidence = min_confidence if min_confidence is not None else self.min_confidence
@@ -110,15 +118,16 @@ class BaseTensorflowFaceDetector(FaceDetector):
                                               ymin * im_height, ymax * im_height)
 
                 x, y, w, h = int(left), int(top), int(right - left), int(bottom - top)
+                faces_images.append(self.crop_face(image,x,y,w,h))
                 if include_score:
-                    faces.append([x, y, w, h, scores[i]])
+                    faces_coords.append([x, y, w, h, scores[i]])
                 else:
-                    faces.append([x, y, w, h])
+                    faces_coords.append([x, y, w, h])
 
                 if draw_faces:
                     self.draw_face(image, (x, y, w, h), color)
 
-        return faces
+        return faces_coords, faces_images
 
 
 class RfcnResnet101FaceDetector(BaseTensorflowFaceDetector):

@@ -15,6 +15,11 @@ except:
   # Invalid device or cannot modify virtual devices once initialized. 
   pass 
 
+def mk_dir(_dir):
+    try:
+        os.mkdir(_dir)
+    except OSError:
+        pass
 
 def rescale_image(image: Image, input_shape=(128,128)):
     iw, ih = image.size
@@ -35,12 +40,12 @@ def rescale_image(image: Image, input_shape=(128,128)):
 def get_transform_func():
     p = Augmentor.Pipeline()
     p.flip_left_right(probability=0.5)
-    p.rotate(probability=1, max_left_rotation=5, max_right_rotation=5)
+    p.rotate(probability=0.6, max_left_rotation=5, max_right_rotation=5)
     p.zoom_random(probability=0.5, percentage_area=0.95)
     p.random_distortion(probability=0.5, grid_width=2, grid_height=2, magnitude=8)
-    p.random_color(probability=1, min_factor=0.8, max_factor=1.2)
-    p.random_contrast(probability=1, min_factor=0.8, max_factor=1.2)
-    p.random_brightness(probability=1, min_factor=0.8, max_factor=1.2)
+    p.random_color(probability=0.6, min_factor=0.8, max_factor=1.2)
+    p.random_contrast(probability=0.6, min_factor=0.8, max_factor=1.2)
+    p.random_brightness(probability=0.6, min_factor=0.8, max_factor=1.2)
     p.random_erasing(probability=0.5, rectangle_area=0.2)
 
     def transform_image(input_image: Image):
@@ -58,7 +63,7 @@ class DataGenerator(Sequence):
         self.df = df
         self.augment = augment
         self.n_classes = n_classes
-        self.n_classes_check = n_classes
+        self.n_classes_check = dict(n_classes)
         cols_needed = ['path','gender','emotion','age']
         for col in cols_needed:
             if col not in df.columns.values :
@@ -94,7 +99,7 @@ class DataGenerator(Sequence):
                 if self.augment:
                     processed_image = np.array(self.transform_image(rescaled_image))/255.
                 else:
-                    processed_image = np.array(rescaled_image,dtype=int)/255.
+                    processed_image = np.array(rescaled_image,dtype=float)/255.
                 x[i] = processed_image
 
                 if self.n_classes_check['emotion']:
@@ -145,25 +150,30 @@ def create_model(inputs,n_classes={'emotion':6,'age':101,'gender':2}):
 
     vgg16 = tf.keras.applications.VGG16(input_tensor=inputs,weights='imagenet',include_top=False)
     f1 = vgg16.get_layer('block5_pool').output
+    x = tf.keras.layers.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv4')(f1)
+    x = tf.keras.layers.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv5')(x)
+    x = tf.keras.layers.Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv6')(x)
 
     x = compose(
             DarknetConv2D(512, (1,1),name='block6_conv'),
             tf.keras.layers.BatchNormalization(name='block6_bn'),
             tf.keras.layers.LeakyReLU(alpha=0.1,name='block6_lrelu'),
-            tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block6_pool'))(f1)
+            tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block6_pool'))(x)
 
     y_e = compose(
-            DarknetConv2D(n_classes['emotion'], (1,1),name='block7_conv'),
+            DarknetConv2D(256, (1,1),name='block7_conv'),
             tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block7_pool'),
-            tf.keras.layers.Flatten(name='block7_flat'))(x)
+            tf.keras.layers.Flatten(name='block7_flat'),
+            tf.keras.layers.Dense(n_classes['emotion'],activation='softmax',name='block7_dense'))(x)
 
     y_g = compose(
             DarknetConv2D(128, (3,3),name='block8_conv1'),
             tf.keras.layers.BatchNormalization(name='block8_bn'),
             tf.keras.layers.LeakyReLU(alpha=0.1,name='block8_lrelu'),
-            DarknetConv2D(n_classes['gender'], (1,1),name='block8_conv2'),
+            DarknetConv2D(64, (1,1),name='block8_conv2'),
             tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block8_pool'),
-            tf.keras.layers.Flatten(name='block8_flat'))(x)
+            tf.keras.layers.Flatten(name='block8_flat'),
+            tf.keras.layers.Dense(n_classes['gender'],activation='softmax',name='block8_dense'))(x)
     
 
     f2 = vgg16.get_layer('block5_conv3').output
@@ -179,11 +189,10 @@ def create_model(inputs,n_classes={'emotion':6,'age':101,'gender':2}):
             tf.keras.layers.BatchNormalization(name='block9_bn'),
             tf.keras.layers.LeakyReLU(alpha=0.1,name='block9_lrelu'),
             tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block9_pool1'),
-            DarknetConv2D(256, (1,1),name='block9_conv3'),
+            DarknetConv2D(128, (3,3),name='block9_conv3'),
             tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block9_pool2'),
-            DarknetConv2D(n_classes['age'], (1,1),name='block9_conv4'),
-            tf.keras.layers.AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding="same",name='block9_pool3'),
-            tf.keras.layers.Flatten(name='block9_flat'))(x)
+            tf.keras.layers.Flatten(name='block9_flat'),
+            tf.keras.layers.Dense(n_classes['age'],activation='softmax',name='block9_dense'))(x)
 
 
     return tf.keras.models.Model(inputs = inputs, outputs=[y_e,y_g, y_a], name='ega_model')
@@ -210,20 +219,18 @@ def compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_
     loss_y_e = 0; loss_y_g = 0; loss_y_a = 0
 
     if target_y_e is not None:
-        l_y_e = tf.nn.sigmoid_cross_entropy_with_logits(labels=target_y_e, logits=pred_y_e)
-        loss_y_e = tf.reduce_mean(tf.reduce_sum(l_y_e,axis=[1]))
+        l_y_e = tf.keras.losses.categorical_crossentropy(target_y_e, pred_y_e)
+        loss_y_e = tf.reduce_mean(l_y_e)
 
     if target_y_g is not None:
-        l_y_g = tf.nn.sigmoid_cross_entropy_with_logits(labels=target_y_g, logits=pred_y_g)
-        loss_y_g = tf.reduce_mean(tf.reduce_sum(l_y_g,axis=[1]))
+        l_y_g = tf.keras.losses.categorical_crossentropy(target_y_g, pred_y_g)
+        loss_y_g = tf.reduce_mean(l_y_g)
 
     if target_y_a is not None:
-        l_y_a = tf.nn.sigmoid_cross_entropy_with_logits(labels=target_y_a, logits=pred_y_a)
-        loss_y_a = tf.reduce_mean(tf.reduce_sum(l_y_a,axis=[1]))
-    
-    total_loss = loss_y_a + loss_y_g + loss_y_e
+        l_y_a = tf.keras.losses.categorical_crossentropy(target_y_a, pred_y_a)
+        loss_y_a = tf.reduce_mean(l_y_a)
 
-    return total_loss
+    return loss_y_e, loss_y_g, loss_y_a
 
 def get_model(data_gen: DataGenerator,non_trainable_blocks=['block9','block8']):
     image_input = tf.keras.layers.Input(shape=data_gen.input_shape)
@@ -232,9 +239,9 @@ def get_model(data_gen: DataGenerator,non_trainable_blocks=['block9','block8']):
     model = set_non_trainable(model,block_ids=non_trainable_blocks)
     return model
 
-def train_model(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000):
-
-    optimizer = tf.keras.optimizers.Adam(lr=1e-4)
+def train_model(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000, checkpoints_path="checkpoints"):
+    
+    optimizer = tf.keras.optimizers.Adadelta()
     writer = tf.summary.create_file_writer("./log")
     global_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
     validation_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
@@ -244,27 +251,115 @@ def train_model(model :tf.keras.models.Model , train_gen:DataGenerator, validati
             image_data, target_y_e, target_y_g, target_y_a = next(train_gen.get_data())
             with tf.GradientTape() as tape:
                 pred_y_e, pred_y_g, pred_y_a = model(image_data)
-                loss = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
-                total_loss = loss
+                l_e, l_g, l_a= compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
+                total_loss = l_e + l_g + l_a
                 gradients = tape.gradient(total_loss, model.trainable_variables)
                 optimizer.apply_gradients(zip(gradients, model.trainable_variables))
                 print("=> epoch %d  step %d  train_loss: %.6f" %(epoch+1, step+1, total_loss.numpy()))
 
             with writer.as_default():
-                tf.summary.scalar("train_loss", total_loss, step=global_steps)
+                tf.summary.scalar("train/total_loss", total_loss, step=global_steps)
+                tf.summary.scalar("train/emotion_loss", l_e, step=global_steps)
+                tf.summary.scalar("train/gender_loss", l_g, step=global_steps)
+                tf.summary.scalar("train/age_loss", l_a, step=global_steps)
             writer.flush()
 
             # validation step
-            if step%1000==0:
+            if step%500==0:
                 validation_steps.assign_add(1)
                 image_data, target_y_e, target_y_g, target_y_a = next(validation_gen.get_data())
                 pred_y_e, pred_y_g, pred_y_a = model(image_data)
-                loss = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
+                l_e, l_g, l_a = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
+                total_valid_loss = l_e + l_g + l_a
                 with writer.as_default():
-                    tf.summary.scalar("valid_loss", total_loss, step=validation_steps)
+                    tf.summary.scalar("valid_loss", total_valid_loss, step=validation_steps)
                 writer.flush()
-            
-        model.save_weights("EGA.h5")
+        mk_dir(checkpoints_path)
+        p_loss = int(round(total_loss.numpy(),2)*100)
+        model.save(f"{checkpoints_path}/EGA_epoch_{epoch}_score_{p_loss}.model")
+        model.save_weights(f"{checkpoints_path}/EGA_epoch_{epoch}_score_{p_loss}.h5")
+
+def load_model(path):
+    model = tf.keras.models.load_model(path)
+    print(model.summary())
+    return model
+
+
+import mlflow
+import mlflow.tensorflow
+
+mlflow.set_experiment("/experiments/face-age-emotion-gender-detector")
+mlflow.tensorflow.autolog()
+
+def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000,checkpoints_path="checkpoints/run3"):
+    with mlflow.start_run():
+        mlflow.active_run()
+        print(dir(mlflow.active_run()))
+        print(mlflow.active_run().data)
+        return 0
+        optimizer = tf.keras.optimizers.Adadelta()
+        writer = tf.summary.create_file_writer("./log")
+        global_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
+        validation_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
+        for epoch in range(epochs):
+            for step in range(steps):
+                global_steps.assign_add(1)
+                image_data, target_y_e, target_y_g, target_y_a = next(train_gen.get_data())
+                with tf.GradientTape() as tape:
+                    pred_y_e, pred_y_g, pred_y_a = model(image_data)
+                    l_e, l_g, l_a= compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
+                    total_loss = l_e + l_g + l_a
+                    gradients = tape.gradient(total_loss, model.trainable_variables)
+                    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+                    print("=> epoch %d  step %d  train_loss: %.6f" %(epoch+1, step+1, total_loss.numpy()))
+
+                with writer.as_default():
+                    tf.summary.scalar("train/total_loss", total_loss, step=global_steps)
+                    tf.summary.scalar("train/emotion_loss", l_e, step=global_steps)
+                    tf.summary.scalar("train/gender_loss", l_g, step=global_steps)
+                    tf.summary.scalar("train/age_loss", l_a, step=global_steps)
+                writer.flush()
+
+                # validation step
+                if step%500==0:
+                    validation_steps.assign_add(1)
+                    image_data, target_y_e, target_y_g, target_y_a = next(validation_gen.get_data())
+                    pred_y_e, pred_y_g, pred_y_a = model(image_data)
+                    l_e, l_g, l_a = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
+                    total_valid_loss = l_e + l_g + l_a
+                    with writer.as_default():
+                        tf.summary.scalar("valid_loss", total_valid_loss, step=validation_steps)
+                    writer.flush()
+            mk_dir("checkpoints/")
+            p_loss = int(round(total_loss.numpy(),2)*100)
+            model.save(f"EGA_epoch_{epoch}_score_{p_loss}")
+            model.save_weights(f"EGA_epoch_{epoch}_score_{p_loss}.h5")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -273,18 +368,19 @@ if __name__=='__main__':
 
     model = create_model(image_input, n_classes={'emotion':6,'age':101,'gender':2})
     model = set_non_trainable(model,block_ids=['block9','block8'])
-    print(check_trainable_variables(model))
-    print(len(check_trainable_variables(model)['trainable']))
-    print(len(model.trainable_variables))
-    print([x.name for x in model.trainable_variables])
+    # print(check_trainable_variables(model))
+    # print(len(check_trainable_variables(model)['trainable']))
+    # print(len(model.trainable_variables))
+    # print([x.name for x in model.trainable_variables])
 
     test_input = np.random.rand(2,128,128,3)
     pred_y_e, pred_y_g, pred_y_a = model(test_input)
     print(np.shape(pred_y_a), type(pred_y_a))
 
     target_y_a = to_categorical(np.random.randint(101,size=(2,1)),num_classes=101)
-    loss = compute_loss(pred_y_e, pred_y_g, pred_y_a, None, None, target_y_a )
+    loss_y_a, loss_y_g, loss_y_e = compute_loss(pred_y_e, pred_y_g, pred_y_a, None, None, target_y_a )
 
-    print(loss)
+    print(loss_y_a)
+    
 
-    print(model.summary())
+    # print(model.summary())
