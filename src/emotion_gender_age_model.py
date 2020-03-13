@@ -290,20 +290,23 @@ import mlflow.tensorflow
 
 mlflow.set_experiment("/experiments/face-age-emotion-gender-detector")
 mlflow.tensorflow.autolog()
+mlflow.keras.autolog()
 
 def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000,checkpoints_path="checkpoints/run3"):
     with mlflow.start_run():
         mlflow.active_run()
-        print(dir(mlflow.active_run()))
-        print(mlflow.active_run().data)
-        return 0
+        mlflow.log_param('Epochs',str(epochs))
+        mlflow.log_param('Steps',str(steps))
+        mlflow.log_param('model_summary', model.summary())
+        # print(dir(mlflow.active_run()))
+        # print(mlflow.active_run().data)
+        # return 0
         optimizer = tf.keras.optimizers.Adadelta()
-        writer = tf.summary.create_file_writer("./log")
-        global_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
-        validation_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
+        global_steps = 0
+        validation_steps = 0
         for epoch in range(epochs):
             for step in range(steps):
-                global_steps.assign_add(1)
+                global_steps += 1
                 image_data, target_y_e, target_y_g, target_y_a = next(train_gen.get_data())
                 with tf.GradientTape() as tape:
                     pred_y_e, pred_y_g, pred_y_a = model(image_data)
@@ -313,28 +316,26 @@ def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, v
                     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
                     print("=> epoch %d  step %d  train_loss: %.6f" %(epoch+1, step+1, total_loss.numpy()))
 
-                with writer.as_default():
-                    tf.summary.scalar("train/total_loss", total_loss, step=global_steps)
-                    tf.summary.scalar("train/emotion_loss", l_e, step=global_steps)
-                    tf.summary.scalar("train/gender_loss", l_g, step=global_steps)
-                    tf.summary.scalar("train/age_loss", l_a, step=global_steps)
-                writer.flush()
+                    mlflow.log_metric("train/total_loss", total_loss, step=global_steps)
+                    mlflow.log_metric("train/emotion_loss", l_e, step=global_steps)
+                    mlflow.log_metric("train/gender_loss", l_g, step=global_steps)
+                    mlflow.log_metric("train/age_loss", l_a, step=global_steps)
 
                 # validation step
                 if step%500==0:
-                    validation_steps.assign_add(1)
+                    validation_steps += 1
                     image_data, target_y_e, target_y_g, target_y_a = next(validation_gen.get_data())
                     pred_y_e, pred_y_g, pred_y_a = model(image_data)
                     l_e, l_g, l_a = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
                     total_valid_loss = l_e + l_g + l_a
-                    with writer.as_default():
-                        tf.summary.scalar("valid_loss", total_valid_loss, step=validation_steps)
-                    writer.flush()
+                    mlflow.log_metric("valid_loss", total_valid_loss, step=validation_steps)
+   
+
             mk_dir("checkpoints/")
             p_loss = int(round(total_loss.numpy(),2)*100)
             model.save(f"EGA_epoch_{epoch}_score_{p_loss}")
             model.save_weights(f"EGA_epoch_{epoch}_score_{p_loss}.h5")
-
+        mlflow.end_run()
 
 
 

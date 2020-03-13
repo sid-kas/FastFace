@@ -1,0 +1,74 @@
+version: '3'
+
+volumes:
+  postgres_db:
+  pgadmin:
+  
+networks:
+  postgres_db:
+    driver: bridge
+
+services:
+  waitfordb:
+    image: dadarek/wait-for-dependencies
+    depends_on:
+      - postgresql
+    command: postgresql:5432
+
+  postgres_db:
+    image: postgres:latest
+    container_name: postgresql
+    volumes:
+      - /home/sidkas/docker-apps/volumes/postgres-data:/var/lib/postgresql/data/:rw
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /data/postgres
+      POSTGRES_DB: mlflow-db
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    hostname: postgresql
+    restart: always
+    
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin_container
+    ports:
+      - 15432:80
+    environment:
+      - GUNICORN_THREADS=10
+      - PGADMIN_DEFAULT_EMAIL=siddhartha.kasaraneni@gmail.com
+      - PGADMIN_DEFAULT_PASSWORD=cit_digi
+    volumes:
+        - pgadmin:/root/.pgadmin
+    depends_on:
+      - postgres_db
+    networks:
+      - postgres_db
+    restart: unless-stopped
+
+
+  mlflow:
+    build: .
+    container_name: mlflow
+    expose:
+      - 80
+      - 443
+    depends_on:
+      - postgresql
+      - waitfordb
+    volumes:
+      - ${CREDENTIALS_PATH}:/opt/application_default_credentials.json
+    environment:
+      DB_URI: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresql:5432/mlflow-db
+      VIRTUAL_HOST: ${HOST}
+      VIRTUAL_PORT: 80
+
+
+volumes:
+  certs:
+  html:
+  vhost:
+  dhparam:
+  conf:

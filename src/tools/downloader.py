@@ -35,7 +35,7 @@ class Downloader:
         if token:
             params = {'id': id, 'confirm': token}
             response = session.get(URL, params=params, stream=True)
-
+        print(response)
         self.save_response_content(response, destination)
 
         print('Finished download')
@@ -50,11 +50,11 @@ class Downloader:
     @staticmethod
     def save_response_content(response, destination):
         with open(destination, "wb") as f:
-            total_length = int(response.headers.get('content-length'))
-            progress_bar = tqdm(total=total_length/(1024*1024))
+            # total_length = int(response.headers.get('content-length'))
+            # progress_bar = tqdm(total=total_length/(1024*1024))
             for chunk in response.iter_content(CHUNK_SIZE):
                 if chunk:  # filter out keep-alive new chunks
-                    progress_bar.update(CHUNK_SIZE/(1024*1024))
+                    # progress_bar.update(CHUNK_SIZE/(1024*1024))
                     f.write(chunk)
 
     @staticmethod

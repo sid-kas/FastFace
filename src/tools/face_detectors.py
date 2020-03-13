@@ -1,4 +1,4 @@
-import os
+import os, sys
 import logging
 from abc import ABCMeta, abstractmethod, abstractproperty
 
@@ -68,21 +68,21 @@ class BaseTensorflowFaceDetector(FaceDetector):
     def __init__(self, min_confidence, checkpoint):
         super(BaseTensorflowFaceDetector, self).__init__()
         self.min_confidence = min_confidence
-        self.detection_graph = tf.Graph()
+        self.detection_graph = tf.compat.v1.Graph()
         self.checkpoint = checkpoint
 
         with self.detection_graph.as_default():
-            od_graph_def = tf.GraphDef()
+            od_graph_def = tf.compat.v1.GraphDef()
 
-            if not tf.gfile.Exists(self.checkpoint):
+            if not tf.compat.v1.gfile.Exists(self.checkpoint):
                 log.info('Checkpoint not found. Triggering download.')
                 self.download_and_extract_model('models/')
 
-            with tf.gfile.GFile(self.checkpoint, 'rb') as fid:
+            with tf.compat.v1.gfile.GFile(self.checkpoint, 'rb') as fid:
                 serialized_graph = fid.read()
                 od_graph_def.ParseFromString(serialized_graph)
-                tf.import_graph_def(od_graph_def, name='')
-            self.sess = tf.Session(graph=self.detection_graph)
+                tf.compat.v1.import_graph_def(od_graph_def, name='')
+            self.sess = tf.compat.v1.Session(graph=self.detection_graph)
 
     def detect(self, image, include_score=True, draw_faces=True, color=(0, 255, 0), min_confidence=None):
         # Expand dimensions since the model expects images to have shape: [1, None, None, 3]

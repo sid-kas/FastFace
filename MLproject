@@ -1,0 +1,9 @@
+name: EGA_NET
+conda_env: conda.yaml
+
+entry_points:
+  main:
+    parameters:
+      batch_size: {type: int, default: 100}
+      train_steps: {type: int, default: 1000}
+    command: "python src/train.py --batch_size={batch_size} --train_steps={train_steps}"
