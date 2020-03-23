@@ -11,6 +11,7 @@ except:
   pass 
 
 
+
 # split data into train, validation and test datasets in pandas
 df = pd.read_pickle("./imfdb_meta.pkl")
 train_test_mask = np.random.rand(len(df)) < 0.8
@@ -38,11 +39,10 @@ validation_gen = ega.DataGenerator(valid_df,batch_size=batch_size,image_size=ima
 
 model = ega.get_model(train_gen,non_trainable_blocks=['block9']) # 'bolck1','bolck2','bolck3','bolck4','bolck5',
 
-fake_data = np.ones(shape=[12, image_size,image_size, 3]).astype(np.float32)
+fake_data = np.ones(shape=[batch_size, image_size,image_size, 3]).astype(np.float32)
 model(fake_data) # initialize model to load weights
-model.load_weights("./checkpoints/run3/EGA_epoch_22_score_91.h5")
+# model.load_weights("./checkpoints/run3/EGA_epoch_22_score_91.h5")
 
 print(model.summary())
-# print(train_gen.n_classes)
-# print(train_gen.n_classes_check)
+
 ega.train_model(model,train_gen, validation_gen,epochs=40,steps=5000,checkpoints_path="checkpoints/run4")

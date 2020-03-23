@@ -7,6 +7,9 @@ from PIL import Image
 from functools import wraps, reduce
 import Augmentor
 from keras.utils import Sequence, to_categorical
+import tensor_board_wrapper as tbw
+
+tb = tbw.TensorBoardWrapper() 
 
 physical_devices = tf.config.list_physical_devices('GPU') 
 try: 
@@ -127,6 +130,12 @@ class DataGenerator(Sequence):
         while True:
             yield self.__getitem__(np.random.randint(data_len))
 
+    def get_sample_data(self, n=1):
+        if n> self.__len__():
+            n = self.__len__()
+        return self.__getitem__(np.random.randint(n))
+
+
 def compose(*funcs):
     """Compose arbitrarily many functions, evaluated left to right.
     Reference: https://mathieularose.com/function-composition-in-python/
@@ -240,11 +249,16 @@ def get_model(data_gen: DataGenerator,non_trainable_blocks=['block9','block8']):
     return model
 
 def train_model(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000, checkpoints_path="checkpoints"):
-    
+    mk_dir(checkpoints_path)
+    model_dir = os.path.join(checkpoints_path,tb.time_stamp)
+    tf.saved_model.save(model,model_dir+"/model")
     optimizer = tf.keras.optimizers.Adadelta()
-    writer = tf.summary.create_file_writer("./log")
+    
     global_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
     validation_steps = tf.Variable(0, trainable=False, dtype=tf.int64)
+    tb.generate_model_graph(model,train_gen.get_sample_data())
+    tb.launch_tensorboard()
+
     for epoch in range(epochs):
         for step in range(steps):
             global_steps.assign_add(1)
@@ -256,13 +270,11 @@ def train_model(model :tf.keras.models.Model , train_gen:DataGenerator, validati
                 gradients = tape.gradient(total_loss, model.trainable_variables)
                 optimizer.apply_gradients(zip(gradients, model.trainable_variables))
                 print("=> epoch %d  step %d  train_loss: %.6f" %(epoch+1, step+1, total_loss.numpy()))
-
-            with writer.as_default():
-                tf.summary.scalar("train/total_loss", total_loss, step=global_steps)
-                tf.summary.scalar("train/emotion_loss", l_e, step=global_steps)
-                tf.summary.scalar("train/gender_loss", l_g, step=global_steps)
-                tf.summary.scalar("train/age_loss", l_a, step=global_steps)
-            writer.flush()
+                tb.add_scalar("train/total_loss", total_loss, step=global_steps)
+                tb.add_scalar("train/emotion_loss", l_e, step=global_steps)
+                tb.add_scalar("train/gender_loss", l_g, step=global_steps)
+                tb.add_scalar("train/age_loss", l_a, step=global_steps)
+            
 
             # validation step
             if step%500==0:
@@ -271,36 +283,65 @@ def train_model(model :tf.keras.models.Model , train_gen:DataGenerator, validati
                 pred_y_e, pred_y_g, pred_y_a = model(image_data)
                 l_e, l_g, l_a = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
                 total_valid_loss = l_e + l_g + l_a
-                with writer.as_default():
-                    tf.summary.scalar("valid_loss", total_valid_loss, step=validation_steps)
-                writer.flush()
-        mk_dir(checkpoints_path)
+                tb.add_scalar("valid_loss", total_valid_loss, step=validation_steps)
+
         p_loss = int(round(total_loss.numpy(),2)*100)
-        model.save(f"{checkpoints_path}/EGA_epoch_{epoch}_score_{p_loss}.model")
-        model.save_weights(f"{checkpoints_path}/EGA_epoch_{epoch}_score_{p_loss}.h5")
+        model.save(f"{model_dir}/EGA_epoch_{epoch}_score_{p_loss}.model")
+        model.save_weights(f"{model_dir}/EGA_epoch_{epoch}_score_{p_loss}.h5")
 
 def load_model(path):
     model = tf.keras.models.load_model(path)
     print(model.summary())
     return model
 
+def to_numpy(x):
+    print(type(x))
+    if type(x) == tf.Tensor:
+        return x.numpy()
+    else:
+        return x
+
 
 import mlflow
 import mlflow.tensorflow
+import mlflow.keras
+import tempfile
 
-mlflow.set_experiment("/experiments/face-age-emotion-gender-detector")
-mlflow.tensorflow.autolog()
-mlflow.keras.autolog()
 
-def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000,checkpoints_path="checkpoints/run3"):
+
+
+def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, validation_gen:DataGenerator, epochs=10,steps=4000,mlflow_server='http://0.0.0.0:8643',checkpoints_path="checkpoints/run3"):
+    # Configure output_dir
+    output_dir = tempfile.mkdtemp()
+    
+    if mlflow_server:
+        # Tracking URI
+        if not mlflow_server.startswith("http"):
+            mlflow_tracking_uri = 'http://' + mlflow_server + ':5000'
+        else:
+            mlflow_tracking_uri = mlflow_server
+        # Set the Tracking URI
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        print("MLflow Tracking URI: %s" % mlflow_tracking_uri)
+    else:
+        print("MLflow Tracking URI: %s" % "local directory 'mlruns'")
+    
+    # mlflow.tensorflow.autolog()
+    # mlflow.keras.autolog()
+    mlflow.set_experiment("/face-age-emotion-gender-detector")
+    
     with mlflow.start_run():
-        mlflow.active_run()
+        model_dir = "models/"+ str(mlflow.active_run().info.run_uuid)
+        # mlflow.log_artifacts("checkpoints/")
         mlflow.log_param('Epochs',str(epochs))
         mlflow.log_param('Steps',str(steps))
-        mlflow.log_param('model_summary', model.summary())
-        # print(dir(mlflow.active_run()))
-        # print(mlflow.active_run().data)
-        # return 0
+        x = str(model.summary())
+        mlflow.log_param('model',x )
+        mlflow.keras.log_model(model,'models')
+        tf.saved_model.save(model,model_dir)
+        mlflow.log_artifact('./' + model_dir+"/saved_model.pb")
+        mlflow.log_artifacts('./'+model_dir,artifact_path='models')
+
         optimizer = tf.keras.optimizers.Adadelta()
         global_steps = 0
         validation_steps = 0
@@ -316,9 +357,9 @@ def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, v
                     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
                     print("=> epoch %d  step %d  train_loss: %.6f" %(epoch+1, step+1, total_loss.numpy()))
 
-                    mlflow.log_metric("train/total_loss", total_loss, step=global_steps)
-                    mlflow.log_metric("train/emotion_loss", l_e, step=global_steps)
-                    mlflow.log_metric("train/gender_loss", l_g, step=global_steps)
+                    mlflow.log_metric("train/total_loss", total_loss.numpy(), step=global_steps)
+                    mlflow.log_metric("train/emotion_loss", l_e.numpy(), step=global_steps)
+                    mlflow.log_metric("train/gender_loss", l_g.numpy(), step=global_steps)
                     mlflow.log_metric("train/age_loss", l_a, step=global_steps)
 
                 # validation step
@@ -328,13 +369,18 @@ def train_model_mlflow(model :tf.keras.models.Model , train_gen:DataGenerator, v
                     pred_y_e, pred_y_g, pred_y_a = model(image_data)
                     l_e, l_g, l_a = compute_loss(pred_y_e, pred_y_g, pred_y_a, target_y_e, target_y_g, target_y_a )
                     total_valid_loss = l_e + l_g + l_a
-                    mlflow.log_metric("valid_loss", total_valid_loss, step=validation_steps)
+                    mlflow.log_metric("valid_loss", total_valid_loss.numpy(), step=validation_steps)
    
 
             mk_dir("checkpoints/")
             p_loss = int(round(total_loss.numpy(),2)*100)
-            model.save(f"EGA_epoch_{epoch}_score_{p_loss}")
-            model.save_weights(f"EGA_epoch_{epoch}_score_{p_loss}.h5")
+            print(f"EGA_epoch_{epoch}_score_{p_loss}")
+            # model.save(f"EGA_epoch_{epoch}_score_{p_loss}")
+            # model.save_weights(f"EGA_epoch_{epoch}_score_{p_loss}.h5")
+
+            mlflow.keras.save_model(model,"checkpoints/"+str(int(time.time())))
+
+        mlflow.log_artifacts("checkpoints/")
         mlflow.end_run()
 
 

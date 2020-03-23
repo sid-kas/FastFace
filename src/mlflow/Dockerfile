@@ -16,7 +16,6 @@ RUN apt-get update && apt-get install -y \
     libpq-dev
 
 RUN pip install -U pip && \
-    pip install --ignore-installed google-cloud-storage && \
     pip install psycopg2 mlflow
 
 COPY ./start.sh ./start.sh

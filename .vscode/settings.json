@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "C:\\Users\\siddh\\Miniconda3\\python.exe",
+    "python.pythonPath": "/miniconda3/bin/python",
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true
 }

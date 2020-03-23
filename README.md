@@ -6,4 +6,4 @@
 - conda config yml
 - install conda and the yml via bash script
 - integrate with mlfow
-
+- fake data gen
